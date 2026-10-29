@@ -12,15 +12,29 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active != false;
     }
 
-    // Each admin can read their own role. Client-side role writes are never allowed.
-    match /admins/{uid} {
-      allow get: if signedIn() && request.auth.uid == uid;
-      allow list, create, update, delete: if false;
+    function isActiveUser() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'user'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active != false;
     }
 
-    // The hub is private: only active administrators can read or modify links.
+    match /admins/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid || isAdmin();
+      allow list, create, update, delete: if isAdmin();
+    }
+
+    // Admins manage user roles. A user can only read their own role document.
+    match /users/{uid} {
+      allow get: if (signedIn() && request.auth.uid == uid) || isAdmin();
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Regular users can only read published websites; admins manage the full library.
     match /websites/{websiteId} {
-      allow read, create, update, delete: if isAdmin();
+      allow read: if isAdmin() || (isActiveUser() && resource.data.published == true);
+      allow create, update, delete: if isAdmin();
     }
 
     match /{document=**} {
