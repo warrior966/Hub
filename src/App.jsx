@@ -122,13 +122,26 @@ export default function App() {
   useEffect(() => {
     if (!user || (!isAdmin && !isRegularUser)) { setWebsites([]); setLoading(false); return; }
     setLoading(true);
+    // Evita exigir un índice compuesto para usuarios: filtramos por published
+    // en Firestore y ordenamos los resultados en el cliente.
     const q = isAdmin
       ? query(collection(db, 'websites'), orderBy('createdAt', 'desc'))
-      : query(collection(db, 'websites'), where('published', '==', true), orderBy('createdAt', 'desc'));
+      : query(collection(db, 'websites'), where('published', '==', true));
     return onSnapshot(q, snapshot => {
-      setWebsites(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const items = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (!isAdmin) items.sort((a, b) => {
+        const aTime = a.createdAt?.toMillis?.() || 0;
+        const bTime = b.createdAt?.toMillis?.() || 0;
+        return bTime - aTime;
+      });
+      setWebsites(items);
       setLoading(false);
-    }, () => { setNotice('No se pudieron cargar las webs. Revisa las reglas de Firestore.'); setLoading(false); });
+      setNotice('');
+    }, error => {
+      console.error('Error cargando webs:', error.code, error.message);
+      setNotice(`No se pudieron cargar las webs (${error.code || 'error'}). Revisa las reglas de Firestore.`);
+      setLoading(false);
+    });
   }, [user, isAdmin, isRegularUser]);
 
   const categories = useMemo(() => ['Todas', ...new Set(websites.map(w => w.category || 'General').sort((a,b) => a.localeCompare(b, 'es')))], [websites]);
